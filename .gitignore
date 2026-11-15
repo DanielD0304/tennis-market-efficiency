@@ -68,5 +68,9 @@ attention_epoch_*.png
 .DS_Store
 Thumbs.db
 
+# Claude Code: Worktrees und lokale Einstellungen
+.claude/worktrees/
+.claude/settings.local.json
+
 # betscraper (Django)
 db.sqlite3
