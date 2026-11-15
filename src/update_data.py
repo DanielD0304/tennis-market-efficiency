@@ -7,7 +7,8 @@ Lädt alle Matchdaten (ATP und WTA) herunter und baut data/matches.csv.
 
 Standard sind alle Level (Haupttour inkl. Qualifikation, Challenger, ITF): Elo, Historien und Features
 laufen über alle Level einer Tour gemeinsam, weil Spieler zwischen den Leveln wechseln. Nach dem Ende des
-Sackmann-Archivs kommen Challenger/ITF-Ergebnisse aus den abgerechneten Polymarket-/Kalshi-Märkten
+Sackmann-Archivs kommen ATP-Haupttour, Challenger und WTA-Haupttour mit Stats von TennisMyLife
+(sources/tml.py, nur nicht-kommerzielle Nutzung), ITF und WTA 125 aus den abgerechneten Polymarket-/Kalshi-Märkten
 (data/odds/history, siehe sources/markets.py), sofern die Historie geladen ist.
 
 Ohne pandas/torch lauffähig. Der MatchPredictor ruft update() automatisch auf,
@@ -20,7 +21,7 @@ import time
 from datetime import date, datetime, timedelta
 
 from .sources import build as build_mod
-from .sources import espn, markets, sackmann, tuk
+from .sources import espn, markets, sackmann, tml, tuk
 from .sources.common import DATA_DIR, LEVELS, MATCHES_PATH, TOURS, write_matches
 
 FIRST_YEAR = 2015
@@ -29,6 +30,8 @@ STATE_PATH = os.path.join(DATA_DIR, "update_state.json")
 ESPN_OVERLAP_DAYS = 14
 # Die letzten Tage bei ESPN neu laden, weil sich Matches dort noch ändern
 ESPN_REFRESH_DAYS = 3
+# TennisMyLife-Dateien frühestens nach so vielen Stunden neu laden (die Seite pflegt das laufende Jahr täglich)
+TML_MAX_AGE_HOURS = 20
 
 
 def last_update():
@@ -55,7 +58,7 @@ def update(full=False, first_year=FIRST_YEAR, log=print, tours=TOURS, levels=LEV
     today = date.today()
     years = list(range(first_year, today.year + 1))
 
-    sack_rows, tuk_rows, espn_rows, players, cutoffs, tuk_missing = [], [], [], {}, {}, {}
+    sack_rows, tml_rows, tuk_rows, espn_rows, players, cutoffs, tuk_missing = [], [], [], [], {}, {}, {}
     for tour in tours:
         log(f"[{tour.upper()}] Sackmann (Mirror) ...")
         sackmann.download(years, force=full, tour=tour, levels=levels)
@@ -66,6 +69,15 @@ def update(full=False, first_year=FIRST_YEAR, log=print, tours=TOURS, levels=LEV
         by_level = {lv: sum(r['level'] == lv for r in rows) for lv in levels}
         log(f"  {len(rows)} Matches ({', '.join(f'{k} {v}' for k, v in by_level.items())}), "
             f"Daten bis Turnierstart {cutoffs[tour]}, {len(players[tour])} Spieler")
+
+        # TennisMyLife: Stats für die Zeit nach dem Sackmann-Ende (ab dem Jahr, in dem Sackmann endet)
+        log(f"[{tour.upper()}] TennisMyLife ...")
+        tml_years = [y for y in years if y >= int(cutoffs[tour][:4])]
+        tml.download(tml_years, tour=tour, levels=levels, max_age_hours=0 if full else TML_MAX_AGE_HOURS)
+        rows = tml.load(tml_years, tour=tour, levels=levels)
+        tml_rows += rows
+        log(f"  {len(rows)} Matches ab {tml_years[0] if tml_years else '-'}, "
+            f"mit Stats {sum(1 for r in rows if r.get('w_svpt') not in (None, '', '0'))}")
 
         log(f"[{tour.upper()}] tennis-data.co.uk ...")
         tuk.download(years[:-1], max_age_hours=0 if full else None, tour=tour)
@@ -86,7 +98,7 @@ def update(full=False, first_year=FIRST_YEAR, log=print, tours=TOURS, levels=LEV
 
     log("[Märkte] Polymarket/Kalshi als Ergebnisquelle ...")
     market_rows = [r for r in markets.load(levels, log=log) if r['tour'] in tours]
-    rows, stats = build_mod.build(sack_rows, tuk_rows, espn_rows, players, market_rows)
+    rows, stats = build_mod.build(sack_rows, tuk_rows, espn_rows, players, market_rows, tml_rows)
     rows = [r for r in rows if (r.get('level') or 'main') in levels]  # Level aus dem Turniernamen (ESPN, Märkte)
     write_matches(rows)
     last = max(r['match_date'] or r['tourney_date'] for r in rows)
@@ -106,7 +118,8 @@ def update(full=False, first_year=FIRST_YEAR, log=print, tours=TOURS, levels=LEV
         json.dump(state, f, indent=2)
 
     log(f"{len(rows)} Matches gespeichert in {MATCHES_PATH} "
-        f"(Sackmann {stats['sackmann']}, tennis-data {stats['tuk']}, ESPN {stats['espn']}, "
+        f"(Sackmann {stats['sackmann']}, TennisMyLife {stats['tml']}, tennis-data {stats['tuk']}, "
+        f"ESPN {stats['espn']}, "
         f"Duplikate {stats['duplicates']}, mit Quoten {stats['with_odds']}), letztes Match {last}, "
         f"bereinigt: {stats.get('renamed_players', 0)} Namen vereinheitlicht, "
         f"{stats.get('clean_duplicates', 0)} Doppel-Einträge, {stats.get('clean_odds_removed', 0)} Quoten, "
