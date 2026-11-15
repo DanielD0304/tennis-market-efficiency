@@ -1,11 +1,12 @@
 """
-Führt Sackmann, tennis-data.co.uk und ESPN zu einem Datensatz zusammen.
+Führt Sackmann, TennisMyLife, tennis-data.co.uk und ESPN zu einem Datensatz zusammen.
 
-Priorität pro Match: Sackmann (mit Stats) > tennis-data > ESPN > Kalshi > Polymarket. tennis-data,
-ESPN und die Prediction Markets (sources/markets.py, nur Sieger ohne Score) werden nur für die Zeit nach
-dem Ende der Sackmann-Daten als eigene Matches übernommen, davor liefern sie Quoten bzw. das echte
-Matchdatum und helfen beim Namensabgleich. Für Challenger und ITF sind die Märkte nach dem Sackmann-Ende
-die einzige Quelle (ESPN zeigt nur die Haupttour).
+Priorität pro Match: Sackmann (mit Stats) > TennisMyLife (mit Stats) > tennis-data > ESPN > Kalshi > Polymarket.
+Alle Quellen außer Sackmann werden nur für die Zeit nach dem Ende der Sackmann-Daten als eigene Matches
+übernommen, davor liefern sie Quoten, fehlende Stats bzw. das echte Matchdatum und helfen beim Namensabgleich.
+TennisMyLife (sources/tml.py) deckt danach ATP-Haupttour, Challenger und WTA-Haupttour mit Stats ab. Für ITF und
+WTA 125 sind die Prediction Markets (sources/markets.py, nur Sieger ohne Score) nach dem Sackmann-Ende die einzige
+Quelle (ESPN zeigt nur die Haupttour).
 
 ATP und WTA werden getrennt zusammengeführt: Matches und Namen werden nie über Touren hinweg
 verknüpft (gleicher Nachname bei Herren und Damen ist nicht derselbe Spieler).
@@ -25,7 +26,7 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 
 from ..names import candidate_keys
-from .common import LEVELS, ODDS_COLUMNS, ODDS_PAIRS
+from .common import LEVELS, ODDS_COLUMNS, ODDS_PAIRS, STAT_COLUMNS
 from .places import tourney_country
 
 # Fälle, die sich automatisch nicht sicher zuordnen lassen (andere Vornamen/Abkürzungen je Quelle).
@@ -112,10 +113,28 @@ class Aliases:
         return [g for g in out.values() if len(g) > 1]
 
 
-def _window(row):
+def _start_date_only(row):
+    """
+    Kennt die Zeile nur den Turnierstart? Sackmann immer. TennisMyLife bei Challenger und WTA: dort gleicht das
+    Matchdatum dem Turnierstart. Das trifft auch Matches vom ersten Turniertag mit echtem Datum, für sie ist das
+    weite Fenster nur großzügiger als nötig.
+    """
     if row['source'] == 'sackmann':
+        return True
+    return row['source'] == 'tml' and row.get('match_date') in (None, "", row['tourney_date'])
+
+
+# Qualifikationsrunden ohne eigenes Datum tragen den Start des Hauptfelds, gespielt werden sie bis zu 10 Tage davor
+# (Grand Slams: Qualifikation in der Woche vor dem Turnier)
+QUALI_ROUNDS = ('Q1', 'Q2', 'Q3', 'Q4')
+QUALI_LEAD_DAYS = 10
+
+
+def _window(row):
+    if _start_date_only(row):
         start = _date(row['tourney_date'])
-        return start - timedelta(days=1), start + timedelta(days=16)
+        lead = QUALI_LEAD_DAYS if row.get('round') in QUALI_ROUNDS else 1
+        return start - timedelta(days=lead), start + timedelta(days=16)
     d = _date(row['match_date'] or row['tourney_date'])
     return d - timedelta(days=2), d + timedelta(days=2)
 
@@ -245,7 +264,9 @@ LEVEL_MARKERS = (
     (re.compile(r"^(atp|wta)\b"), 'main'),
 )
 # Quellen mit verlässlichem Level (ESPN setzt immer 'main', Polymarket kennzeichnet nur ITF)
-LEVEL_SOURCES = ('sackmann', 'tuk', 'kalshi')
+LEVEL_SOURCES = ('sackmann', 'tml', 'tuk', 'kalshi')
+# Quellen mit Stats, Untergrund und Ranking im Sackmann-Format
+STAT_SOURCES = ('sackmann', 'tml')
 LEVEL_WINDOW = 21  # Tage im Kalenderjahr, bis zu denen ein gleichnamiges Turnier als dasselbe gilt
 
 
@@ -333,10 +354,21 @@ def _copy_odds(src, dst, same_order):
         dst[c] = src.get(s)
 
 
+def _copy_stats(src, dst, same_order):
+    """Aufschlag-Stats und Minuten aus src, wenn dst keine hat (nur bei gleicher Sieger/Verlierer-Reihenfolge)."""
+    if not same_order or _odd(dst.get('w_svpt')) or not _odd(src.get('w_svpt')):
+        return False
+    for c in STAT_COLUMNS:
+        dst[c] = src.get(c)
+    if not _odd(dst.get('minutes')):
+        dst['minutes'] = src.get('minutes')
+    return True
+
+
 def _copy_details(src, dst):
     """
-    Details aus tennis-data/ESPN in die Sackmann-Zeile desselben Matches: echtes Matchdatum
-    (Sackmann kennt nur den Turnierstart), Indoor/Outdoor und Ort.
+    Details aus einer anderen Quelle in die Sackmann- bzw. TennisMyLife-Zeile desselben Matches: echtes Matchdatum
+    (wo die Zeile nur den Turnierstart kennt), Indoor/Outdoor und Ort.
     """
     day = src.get('match_date')
     start = dst.get('tourney_date')
@@ -391,27 +423,29 @@ def _attach_players(rows, players):
             p = meta(r[f'{side}_name']) or {}
             r[f'{side}_ioc'] = p.get('ioc') or r.get(f'{side}_ioc') or ""
             r[f'{side}_hand'] = p.get('hand') or r.get(f'{side}_hand') or ""
-            r[f'{side}_dob'] = p.get('dob') or ""
+            r[f'{side}_dob'] = p.get('dob') or r.get(f'{side}_dob') or ""
 
 
-def build(sackmann_rows, tuk_rows, espn_rows, players=None, market_rows=()):
+def build(sackmann_rows, tuk_rows, espn_rows, players=None, market_rows=(), tml_rows=()):
     """
     Führt alle Quellen zusammen, getrennt pro Tour (Spalte 'tour', fehlend = 'atp').
     players: {tour: Spielerliste aus sackmann.load_players} für Nationalität, Hand und Alter.
     market_rows: Matches aus Polymarket/Kalshi (sources/markets.load), Reihenfolge = Priorität.
+    tml_rows: Matches aus TennisMyLife (sources/tml.load), mit Stats.
     """
-    market_rows = list(market_rows)
+    market_rows, tml_rows = list(market_rows), list(tml_rows)
     def tour_of(r):
         return r.get('tour') or 'atp'
 
     out, stats = [], Counter()
-    tours = sorted({tour_of(r) for r in sackmann_rows + tuk_rows + espn_rows})
+    tours = sorted({tour_of(r) for r in sackmann_rows + tml_rows + tuk_rows + espn_rows})
     for tour in tours:
         rows, tour_stats = _build_tour([r for r in sackmann_rows if tour_of(r) == tour],
                                        [r for r in tuk_rows if tour_of(r) == tour],
                                        [r for r in espn_rows if tour_of(r) == tour],
                                        (players or {}).get(tour, []),
-                                       [r for r in market_rows if tour_of(r) == tour])
+                                       [r for r in market_rows if tour_of(r) == tour],
+                                       [r for r in tml_rows if tour_of(r) == tour])
         for r in rows:
             r['tour'] = tour
         out += rows
@@ -426,12 +460,13 @@ MARKET_SOURCES = ('kalshi', 'polymarket')
 NO_DETAILS = ('espn',) + MARKET_SOURCES
 
 
-def _build_tour(sackmann_rows, tuk_rows, espn_rows, players, market_rows=()):
+def _build_tour(sackmann_rows, tuk_rows, espn_rows, players, market_rows=(), tml_rows=()):
+    tml_rows = list(tml_rows)
     registry = NameRegistry()
-    for r in sackmann_rows + espn_rows:
+    for r in sackmann_rows + tml_rows + espn_rows:
         registry.add_full(r['winner_name'])
         registry.add_full(r['loser_name'])
-    for r in sackmann_rows + tuk_rows + espn_rows + list(market_rows):
+    for r in sackmann_rows + tml_rows + tuk_rows + espn_rows + list(market_rows):
         r['winner_name'] = registry.canonical(MANUAL_ALIASES.get(r['winner_name'], r['winner_name']))
         r['loser_name'] = registry.canonical(MANUAL_ALIASES.get(r['loser_name'], r['loser_name']))
 
@@ -444,8 +479,8 @@ def _build_tour(sackmann_rows, tuk_rows, espn_rows, players, market_rows=()):
 
     aliases = Aliases()
     abbr_votes = defaultdict(Counter)  # Kurzform -> {voller Name: Anzahl Duplikate}
-    stats = Counter(sackmann=len(out), tuk=0, espn=0, duplicates=0)
-    for kind, rows in (('tuk', tuk_rows), ('espn', espn_rows), ('market', market_rows)):
+    stats = Counter(sackmann=len(out), tml=0, tuk=0, espn=0, duplicates=0)
+    for kind, rows in (('tml', tml_rows), ('tuk', tuk_rows), ('espn', espn_rows), ('market', market_rows)):
         for r in rows:
             source = r['source'] if kind == 'market' else kind
             other, same_order = index.find(r)
@@ -464,8 +499,10 @@ def _build_tour(sackmann_rows, tuk_rows, espn_rows, players, market_rows=()):
                         abbr_votes[b][a] += 1
                 if source == 'tuk' and other.get('B365W') in (None, ""):
                     _copy_odds(r, other, same_order)
-                if other['source'] == 'sackmann':
+                if other['source'] in STAT_SOURCES:
                     _copy_details(r, other)
+                if source == 'tml' and _copy_stats(r, other, same_order):
+                    stats['tml_stats_filled'] += 1
                 if (r['match_date'] or r['tourney_date']) > cutoff:
                     stats['duplicates'] += 1
                     if source in MARKET_SOURCES:
@@ -500,13 +537,14 @@ def _build_tour(sackmann_rows, tuk_rows, espn_rows, players, market_rows=()):
     stats['renamed_players'] = len(rename)
 
     # ESPN und Märkte: Untergrund, Turnierstufe und Ranking ergänzen
-    surface = _tourney_lookup(sackmann_rows + tuk_rows, 'surface', VALID_SURFACES, 'Hard')
-    level = _tourney_lookup(sackmann_rows + tuk_rows, 'tourney_level', VALID_LEVELS, 'A')
+    surface = _tourney_lookup(sackmann_rows + tml_rows + tuk_rows, 'surface', VALID_SURFACES, 'Hard')
+    level = _tourney_lookup(sackmann_rows + tml_rows + tuk_rows, 'tourney_level', VALID_LEVELS, 'A')
     rank = _rank_lookup(out)
     # ESPN zeigt auch einzelne Challenger/WTA-125-Turniere ohne Kennzeichnung (Level dort immer 'main'), Polymarket
     # trennt Challenger und Haupttour nicht: Level über Turniername und Termin. Kalshi kennt das Level selbst und dient
     # mit allen Märkten als Referenz, auch denen, die als Duplikat eines ESPN-Matches weggefallen sind.
-    tour_level = _level_lookup(sackmann_rows + tuk_rows + [r for r in market_rows if r['source'] == 'kalshi'])
+    tour_level = _level_lookup(sackmann_rows + tml_rows + tuk_rows
+                               + [r for r in market_rows if r['source'] == 'kalshi'])
     for r in out:
         if r['source'] not in NO_DETAILS:
             continue
@@ -525,7 +563,7 @@ def _build_tour(sackmann_rows, tuk_rows, espn_rows, players, market_rows=()):
     # Indoor/Outdoor und Land des Turniers (Heimvorteil), Spieler-Metadaten
     _fill_by_tourney(out, 'court')
     _fill_by_tourney(out, 'location')
-    court = _tourney_lookup(tuk_rows, 'court', VALID_COURTS, "")
+    court = _tourney_lookup(tml_rows + tuk_rows, 'court', VALID_COURTS, "")
     for r in out:
         if r.get('court') not in VALID_COURTS:
             r['court'] = court(r.get('tourney_name', ''), r.get('location'))

@@ -31,8 +31,9 @@ robustness rule over quarters): of 120 segments, 0 are GO, 91 NO-GO, 6 candidate
 
 ## What the project covers
 
-- **Data pipeline:** five sources merged into one table (~670k matches, ATP and WTA, main tour, Challenger,
-  ITF): Sackmann archive, tennis-data.co.uk, ESPN, Polymarket and Kalshi resolutions. Name matching,
+- **Data pipeline:** six sources merged into one table (~670k matches, ATP and WTA, main tour, Challenger,
+  ITF): Sackmann archive, TennisMyLife (match stats after the archive ends in June 2026, non-commercial use only),
+  tennis-data.co.uk, ESPN, Polymarket and Kalshi resolutions. Name matching,
   de-duplication, chronological ordering (`src/sources/`, `src/names.py`).
 - **Models:** Elo2, LightGBM, a transformer encoder written from scratch, and a logistic stack with the market
   (`src/elo.py`, `src/models/`, `src/model.py`).

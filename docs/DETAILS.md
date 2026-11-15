@@ -158,6 +158,7 @@ Die Rohdaten liegen unter `data/raw/`, nichts davon ist im Repo.
 | Quelle | Inhalt | Aktualität |
 |---|---|---|
 | [Sackmann-Archiv](https://github.com/Aneeshers/tennis-sackmann-archive) (fester Commit) | ATP und WTA: Ergebnisse **mit Aufschlag-Stats**, Spieler-Metadaten (Nation, Hand, Geburtsdatum); auch Challenger, Qualifikation und ITF (siehe unten) | bis Turnierstart 01.06.2026 (Original-Repo ist offline) |
+| [TennisMyLife](https://stats.tennismylife.org/tennis-match-database) (`src/sources/tml.py`) | Ergebnisse **mit Aufschlag-Stats** im Sackmann-Format für ATP-Haupttour, deren Qualifikation, Challenger und WTA-Haupttour; kein ITF, kein WTA 125, keine Challenger- und WTA-Qualifikation; in `data/raw/tml/`. **Nur nicht-kommerzielle Nutzung**, Rohdateien nicht weitergeben (siehe unten) | täglich, geladen ab dem Jahr des Sackmann-Endes |
 | [tennis-data.co.uk](https://www.tennis-data.co.uk/alldata.php) | Ergebnisse, Rankings, Untergrund, Indoor/Outdoor, Quoten (Bet365, Pinnacle, Ø); ATP in `data/raw/tuk/`, WTA in `data/raw/tuk_wta/` | wöchentlich nach Turnierende |
 | ESPN-Scoreboard | jedes beendete Match (ATP und WTA), auch im laufenden Turnier; nur vereinzelt Challenger/WTA 125, kein ITF, keine Qualifikation | täglich |
 | Polymarket/Kalshi-Auflösungen (`data/odds/history`, `src/sources/markets.py`) | Sieger abgerechneter Match-Märkte (ohne Score), vor allem Challenger und ITF nach dem Sackmann-Ende | mit `python -m src.odds.collect --history` |
@@ -175,11 +176,28 @@ und `wta_matches_qual_itf_*` (WTA 125, ITF W15–W100, Qualifikation). Qualifika
 `main`, `tourney_level` behält den Sackmann-Code (`C`, `15`, `25`, …). Elo, Historien und Features laufen
 über alle Level einer Tour gemeinsam, weil Spieler zwischen den Leveln wechseln. Ausgewertet wird mit
 `--level` (`python -m src.evaluation.backtest --level challenger`), Standard bleibt die Haupttour.
-Nach dem Sackmann-Ende (01.06.2026) kommen Challenger/ITF-Ergebnisse aus den abgerechneten Polymarket- und
-Kalshi-Märkten (`source='kalshi'`/`'polymarket'`, Sieger aus der Auflösung, kein Score, RET nicht erkennbar,
-50-50-Auflösungen fehlen). Duplikate (dasselbe Match bei beiden Venues oder schon aus Sackmann/ESPN bekannt)
-erkennt `build.MatchIndex`, Priorität Sackmann > tennis-data > ESPN > Kalshi > Polymarket. ESPN und
-Polymarket kennzeichnen Challenger nicht, das Level kommt dort über den Turniernamen aus Sackmann.
+Nach dem Sackmann-Ende (01.06.2026) kommen ATP-Haupttour, Challenger und WTA-Haupttour mit Stats von
+TennisMyLife (`source='tml'`). ITF, WTA 125 und Qualifikationen, die TennisMyLife nicht führt, kommen aus den
+abgerechneten Polymarket- und Kalshi-Märkten (`source='kalshi'`/`'polymarket'`, Sieger aus der Auflösung, kein
+Score, RET nicht erkennbar, 50-50-Auflösungen fehlen). Duplikate (dasselbe Match aus mehreren Quellen) erkennt
+`build.MatchIndex`, Priorität Sackmann > TennisMyLife > tennis-data > ESPN > Kalshi > Polymarket. Hat eine
+Sackmann-Zeile keine Stats, übernimmt sie die von TennisMyLife. ESPN und Polymarket kennzeichnen Challenger nicht,
+das Level kommt dort über Turniername und Termin aus Sackmann, TennisMyLife und Kalshi.
+
+Gemessen im Probelauf vom 15.11.2026 (Datensatz für 2026, Matches von Juni bis November mit Aufschlag-Stats):
+ATP-Haupttour 0 % → 86 %, ATP-Challenger 5 % → 63 %, WTA-Haupttour 0 % → 58 %. Der Rest sind vor allem
+Challenger- und WTA-Qualifikationen, einzelne Challenger, die TennisMyLife nicht führt, und Junioren-Märkte.
+
+TennisMyLife-Besonderheiten (`tml.load` gleicht sie aus): In der ATP-Haupttour-Datei ist `tourney_date` der Tag
+des Matches, in den Challenger-, WTA- und Qualifikationsdateien der Start des Hauptfelds; Turnierstufen als Zahl
+(`250`, `500`, `1000`); statt Geburtsdatum das Alter (daraus ein genähertes Geburtsdatum); laufende Turniere in
+eigenen Dateien. Für Zeilen, die nur den Turnierstart kennen, sucht `build._window` Duplikate im ganzen Turnier,
+bei Qualifikationsrunden zusätzlich 10 Tage davor.
+
+Nutzungsbedingungen TennisMyLife (Stand 11/2026): nur private, schulische und nicht-kommerzielle Forschung.
+Kommerzielle Nutzung, ausdrücklich auch Vorhersagemodelle für kommerzielle Dienste und monetarisierte
+Wahrscheinlichkeiten, braucht eine schriftliche Erlaubnis. Die Rohdateien dürfen nicht weitergegeben werden,
+`data/` ist deshalb nicht im Repo, und die Tests nutzen erfundene Zeilen.
 
 ATP und WTA werden getrennt zusammengeführt (Spalte `tour`), Namen und Matches nie über Touren hinweg
 verknüpft; Elo, Historien und H2H laufen pro Tour. Sackmann kennt nur den Turnierstart: Wo dasselbe
