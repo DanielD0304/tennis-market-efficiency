@@ -80,6 +80,9 @@ Data and model files are created locally under `data/` and `models/` and are not
 
 ## Documentation
 
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): goals, key metrics, milestones and decisions (German). Work is tracked in
+  the GitHub issues, one overview issue per milestone
+- [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md): how model changes are measured, and the log of experiments (German)
 - [`docs/DETAILS.md`](docs/DETAILS.md): full technical documentation (German): architecture, data sources,
   evaluation, venues, collector, timing backtest, paper trading
 - [`docs/ROI_PLAN.md`](docs/ROI_PLAN.md): original plan and findings (German)
