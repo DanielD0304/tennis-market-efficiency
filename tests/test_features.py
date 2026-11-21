@@ -81,3 +81,26 @@ def test_feature_values(raw):
     assert (t['age_a'] > 18).all()
     first = t.sort_values('date').iloc[0]
     assert first['n_matches_a'] == 0 and np.isnan(first['win_rate_a'])
+
+
+def test_later_round_without_date_does_not_leak():
+    """
+    Issue #76: R32 mit echtem Datum, R16 und QF nur mit dem Turnierstart. Die Features der R32 dürfen die späteren
+    Runden nicht kennen (vorher sortierten R16 und QF davor: n_matches, Müdigkeit und Form zählten sie mit).
+    """
+    base = dict(tourney_id='t', tourney_name='Open', surface='Hard', tourney_date='20240101', score='6-4 6-4',
+                status='completed', winner_rank=10, loser_rank=20, tour='atp')
+    raw = pd.DataFrame([
+        {**base, 'match_date': '20240103', 'match_num': 1, 'round': 'R32', 'winner_name': 'A', 'loser_name': 'B'},
+        {**base, 'match_date': '', 'match_num': 2, 'round': 'R16', 'winner_name': 'A', 'loser_name': 'C'},
+        {**base, 'match_date': '', 'match_num': 3, 'round': 'QF', 'winner_name': 'A', 'loser_name': 'D'},
+    ])
+    m = prepare_matches(raw)
+    t = feature_table(m)
+    t['round'] = m['round'].to_numpy()
+    r32 = t[t['round'] == 'R32'].iloc[0]
+    side = 'a' if r32['player_a'] == 'A' else 'b'
+    assert r32[f'n_matches_{side}'] == 0
+    assert r32[f'fatigue_matches_7d_{side}'] == 0
+    qf = t[t['round'] == 'QF'].iloc[0]
+    assert qf[f"n_matches_{'a' if qf['player_a'] == 'A' else 'b'}"] == 2
