@@ -509,13 +509,9 @@ Ablage (unter `data/`, nicht im Repo):
   ```
   Mit cron läuft jede Runde einzeln, die Odds API deshalb in einer eigenen, selteneren Zeile (Kontingent). Diese
   Zeile fragt Polymarket und Kalshi mit ab, siehe [Sharp vs. Rest](#sharp-vs-rest-srcevaluationsharppy).
-- Windows (Aufgabenplanung), in der Eingabeaufforderung im Repo-Ordner:
-  ```
-  schtasks /Create /SC MINUTE /MO 20 /TN "TennisOdds" /TR "cmd /c cd /d %CD% && python -m src.odds.collect --venues polymarket,kalshi,softbooks >> data\odds\collect.log 2>&1"
-  schtasks /Create /SC HOURLY /MO 2 /TN "TennisOddsApi" /TR "cmd /c cd /d %CD% && python -m src.odds.collect --venues odds_api >> data\odds\collect.log 2>&1"
-  schtasks /Create /SC DAILY /ST 04:15 /TN "TennisOddsHistory" /TR "cmd /c cd /d %CD% && python -m src.odds.collect --history >> data\odds\history.log 2>&1"
-  ```
-  Den Key einmal mit `setx ODDS_API_KEY "..."` setzen. Die Aufgaben laufen nur, solange der Rechner an ist.
+- Windows: `scripts\windows\install_tasks.cmd` legt die Aufgaben an, siehe
+  [Paper-Trading, Dauerhaft laufen lassen](#paper-dauerhaft). Einen eigenen 20-Minuten-Collector braucht es dort
+  nicht, weil der Paper-Loop Polymarket und Kalshi selbst abfragt.
 - Auf einem Server: `nohup python -m src.odds.collect --loop 20 >> data/odds/collect.log 2>&1 &` oder als
   systemd-Service mit `Restart=always`.
 
@@ -761,6 +757,7 @@ python -m src.paper.run --segments polymarket:challenger:24h,polymarket:itf:0.5-
   prüfen, ob Polymarket und Kalshi aus Deutschland nutzbar sind (Kalshi ist im Wesentlichen nur für die
   USA). Das ist keine Rechtsberatung.
 
+<a id="paper-dauerhaft"></a>
 **Dauerhaft laufen lassen** (lokal, in der Cloud-Session läuft nichts dauerhaft). Der Paper-Lauf holt selbst
 Polymarket- und Kalshi-Snapshots. Für die Strategie „sharp“ muss zusätzlich der Odds-API-Collector laufen
 (siehe oben, Kontingent beachten). Die nächste Paper-Runde wettet auf seine Preise, wenn sie höchstens 90 Minuten alt
@@ -779,12 +776,32 @@ sporadisch blockiert), der Predictor bleibt im Speicher und wird neu gebaut, sob
   5 */3 * * *  cd /pfad/zu/tennis_transformer && ODDS_API_KEY=... python -m src.odds.collect --venues odds_api >> data/odds/collect.log 2>&1
   15 4 * * *   cd /pfad/zu/tennis_transformer && python -m src.update_data && python -m src.odds.collect --history >> data/odds/history.log 2>&1
   ```
-- Windows (Aufgabenplanung, im Repo-Ordner, vorher `mkdir data\paper`):
+- Windows (Aufgabenplanung): Die Startskripte liegen versioniert in `scripts/windows/`. Ein Aufruf legt die drei
+  Aufgaben an oder ersetzt gleichnamige, ohne Adminrechte:
   ```
-  schtasks /Create /SC MINUTE /MO 30 /TN "TennisPaper" /TR "cmd /c cd /d %CD% && python -m src.paper.run --loop 30 >> data\paper\run.log 2>&1"
+  scripts\windows\install_tasks.cmd -WhatIf    # nur anzeigen
+  scripts\windows\install_tasks.cmd
   ```
-  Mit `--loop 30` wirkt die Aufgabe als Wächter: Solange der Loop läuft, startet die Aufgabenplanung keine
-  zweite Instanz (Standard „Keine neue Instanz starten“), bricht er ab, startet ihn der nächste Termin neu.
-  Ohne `--loop` geht es auch: Dank Cache dauert jede Runde dann nur noch rund 13 s, dafür lädt jeder Lauf pandas
-  und den Cache neu.
+
+  | Aufgabe | Skript | Takt | Log |
+  |---|---|---|---|
+  | `TennisPaper` | `paper.cmd` (`src.paper.run --loop 30`) | alle 30 Minuten als Wächter, ohne Zeitlimit | `data\paper\run.log` |
+  | `TennisOddsApi` | `odds_api.cmd` (`src.odds.collect --venues odds_api`) | alle 8 Stunden, nur mit `ODDS_API_KEY` | `data\odds\collect.log` |
+  | `TennisNightly` | `nightly.cmd` (`src.update_data`, dann `src.odds.collect --history`) | täglich 04:15 | `data\odds\history.log` |
+
+  Die Skripte finden das Repo über ihren eigenen Ort (`%~dp0..\..`), es steht kein absoluter Pfad darin. Zieht das
+  Repo um, genügt ein neuer Aufruf von `install_tasks.cmd` (vorher zeigten die Aufgaben auf ein Skript unter `data/`
+  mit festem Pfad und liefen nach dem Umzug wochenlang ins Leere, #35). Python ist `py -3`, ein anderes setzt die
+  Benutzervariable `TENNIS_PYTHON` (`setx TENNIS_PYTHON "C:\...\python.exe"`). `run_hidden.vbs` startet die
+  Skripte ohne Konsolenfenster. Alle Aufgaben laufen auch im Akkubetrieb und holen einen verpassten Termin nach,
+  sobald der Rechner wieder an ist. Ausgeschaltet läuft nichts.
+
+  Mit `--loop 30` wirkt die Aufgabe `TennisPaper` als Wächter: Solange der Loop läuft, startet die Aufgabenplanung
+  keine zweite Instanz („Keine neue Instanz starten“), bricht er ab, startet ihn der nächste Termin neu. Die Odds API
+  läuft nur alle 8 Stunden, weil ein Lauf rund 4 Credits kostet und das freie Kontingent 500 im Monat beträgt (alle
+  2 Stunden wären rund 1.400). Den Key einmal mit `setx ODDS_API_KEY "..."` setzen, dann `install_tasks.cmd`
+  erneut aufrufen.
+
+  Prüfen: `Get-ScheduledTask Tennis* | Get-ScheduledTaskInfo` (PowerShell). `LastTaskResult` 0 heißt erfolgreich,
+  beim Paper-Loop steht dort 267009 (läuft noch).
 - Dashboard: `cd betscraper && python manage.py runserver`, dann http://127.0.0.1:8000/scraper/paper/
