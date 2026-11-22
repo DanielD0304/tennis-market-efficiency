@@ -71,6 +71,33 @@ def test_sort_by_match_date():
     assert list(chronological(pd.DataFrame(rows))['round']) == ['R16', 'QF']
 
 
+def test_later_round_never_before_earlier_round():
+    """
+    Issue #76: Nur ein Teil eines Turniers hat ein echtes Datum. Die R16 ohne Datum (Turnierstart) darf nicht vor die
+    R32 mit echtem Datum sortieren, sonst kennt die R32 das Ergebnis der R16.
+    """
+    from src.chronology import match_dates
+    rows = [_m('A', 'B', '20240103', tdate='20240101', num=1, round='R32'),      # echtes Datum
+            _m('C', 'D', '20240104', tdate='20240101', num=2, round='R32'),      # dieselbe Runde, später
+            _m('A', 'C', '', tdate='20240101', num=3, round='R16'),              # nur Turnierstart
+            _m('A', 'E', '20240102', tdate='20240101', num=4, round='QF'),       # widerspricht der R32 von A
+            _m('X', 'Y', '', tdate='20240101', num=5, round='R16', tid='u'),     # anderes Turnier
+            _m('P', 'Q', '20240102', tdate='20240101', num=6, round=None),       # ohne Runde (Markt)
+            _m('F', 'G', '20240110', tdate='20240101', num=7, round='Q1')]       # Ausreißer bei anderen Spielern
+    df = pd.DataFrame(rows)
+    dates = match_dates(df).dt.strftime('%Y%m%d').tolist()
+    # A-B: das echte Datum nach dem QF von A ist ein Datenfehler und sinkt auf den 2.; R16 und QF frühestens am Tag der
+    # früheren Runden ihrer Spieler (C spielte am 4.); anderes Turnier, Markt-Zeile und der Ausreißer bei F und G
+    # (andere Spieler) bleiben, wie sie sind
+    assert dates == ['20240102', '20240104', '20240104', '20240104', '20240101', '20240102', '20240110']
+    order = [f"{w}-{l}" for w, l in zip(*chronological(df)[['winner_name', 'loser_name']].T.to_numpy())]
+    assert order.index('A-B') < order.index('C-D') < order.index('A-C') < order.index('A-E')
+
+    out = compute_elo_ratings(df)
+    r16 = out[(out['winner_name'] == 'A') & (out['loser_name'] == 'C')].iloc[0]
+    assert r16['winner_elo'] == pytest.approx(1516)  # A hat vorher nur die R32 gewonnen, nicht das QF
+
+
 # ------------------------------------------------------------ Features
 
 def _hist(day, sets=2, minutes=90.0):
