@@ -758,6 +758,10 @@ python -m src.paper.run --segments polymarket:challenger:24h,polymarket:itf:0.5-
   USA). Das ist keine Rechtsberatung.
 
 <a id="paper-dauerhaft"></a>
+> **Stand 27.11.2026: abgeschaltet.** Das Projekt läuft nicht dauerhaft, bis der Backtest ein GO liefert (Entscheidung
+> in `docs/ROADMAP.md`). Die Aufgaben sind deaktiviert, nicht gelöscht. Wieder einschalten in PowerShell:
+> `Enable-ScheduledTask -TaskName TennisPaper, TennisOddsApi, TennisNightly`.
+
 **Dauerhaft laufen lassen** (lokal, in der Cloud-Session läuft nichts dauerhaft). Der Paper-Lauf holt selbst
 Polymarket- und Kalshi-Snapshots. Für die Strategie „sharp“ muss zusätzlich der Odds-API-Collector laufen
 (siehe oben, Kontingent beachten). Die nächste Paper-Runde wettet auf seine Preise, wenn sie höchstens 90 Minuten alt
