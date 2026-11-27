@@ -50,6 +50,9 @@ Commit-Nachrichten wie bisher: `add:`, `fix:`, `perf:`, `test:`, `docs:` und ein
 - **Wetten:** Die Spur ist eingefroren (M4). Keine neuen Strategien, Schwellen oder Segmente im Paper-Trading ohne
   Vorregistrierung nach #27.
 - **Löschen und Überschreiben** (Branches, `data/`, Modelle) nur nach Rückfrage.
+- **Kein Dauerbetrieb** (Entscheidung vom 27.11.2026). Die geplanten Aufgaben `TennisPaper`, `TennisOddsApi` und
+  `TennisNightly` sind deaktiviert und bleiben es, bis der Backtest ein GO liefert. Daten bei Bedarf einmal mit
+  `python -m src.update_data` aktualisieren. Keine Loops, Collector oder neuen geplanten Aufgaben starten.
 
 ## Befehle
 
@@ -59,7 +62,7 @@ python -m src.update_data                           # Daten aktualisieren (--ful
 python -m src.evaluation.backtest --start 2021 --end 2024 --tour atp --models market,rank,elo,elo2,gbdt,stack
 python -m src.evaluation.backtest --level all ...   # alle Level auswerten (Standard: Haupttour)
 python -m src.models.gbdt --tour atp                # Live-Modell trainieren (auch --tour wta)
-python -m src.paper.run --loop 30                   # Paper-Trading und Snapshots
+python -m src.paper.run --loop 30                   # Paper-Trading und Snapshots (ruht, siehe „Kein Dauerbetrieb“)
 python -m src.evaluation.timing                     # Timing-Backtest (nur nach #64)
 cd betscraper && python manage.py runserver         # Dashboard
 ```

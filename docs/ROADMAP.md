@@ -23,7 +23,7 @@ Preis (Pinnacle, sonst Betfair Exchange), im Walk-forward.
 | Gap ATP-Haupttour (2024–2026) | 0,0079 | höchstens 0,008 | höchstens 0,006 |
 | Gap WTA-Haupttour (2024–2026) | 0,0122 (2026 allein 0,0184) | höchstens 0,009 | höchstens 0,007 |
 | Log Loss ATP, alle Level (2024–2026) | 0,5723 | | höchstens 0,568 |
-| Forward-Ledger | noch nicht vorhanden | läuft | mindestens 1.500 Vorhersagen, Live-Gap höchstens 0,003 vom Backtest entfernt |
+| Forward-Ledger | zurückgestellt (Entscheidung vom 27.11.2026) | | erst nach einem GO im Backtest |
 
 Die Zielwerte sind Hypothesen. Den Markt zu erreichen ist unwahrscheinlich. Die Werte in der Spalte „Stand" stammen
 aus den Vorhersagen vom 27.10.2026 und werden mit #36 durch eine frische Baseline ersetzt (`docs/BASELINE.md`).
@@ -62,7 +62,7 @@ Reihenfolge ist Priorität. Innerhalb eines Milestones gilt die Reihenfolge im �
 | **M3 Produkt** | Dashboard (Heute, Track Record, Data Health), Modell-Versionen, Tageslauf, Aufräumen | #69 |
 | **M4 Edge-Forschung** | festes Protokoll, Paper v2 auf reparierten Daten, genau ein neuer Timing-Backtest | #70 |
 
-Ausnahmen von der Reihenfolge: #35 (Loops) und #38 (Ledger) zuerst, weil diese Daten nicht nachholbar sind.
+Seit dem 27.11.2026 läuft nichts dauerhaft (siehe „Entscheidungen“): Snapshots, Paper-Trading und Ledger ruhen.
 M3 darf parallel zu M2 laufen, sobald der Ledger Daten hat.
 
 ## Entscheidungen
@@ -75,6 +75,7 @@ M3 darf parallel zu M2 laufen, sobald der Ledger Daten hat.
 | 15.11.2026 | Experimente nur nach Protokoll, Holdout 2025–2026 | Schutz vor Überanpassung an den Backtest, Anlass war das falsche Timing-GO vom 27.10. |
 | 15.11.2026 | Wetten eingefroren: keine neuen Strategien oder Regeln vor M1 | Paper v1 ist NO-GO, und es lief auf den schlechtesten Daten |
 | 15.11.2026 | Features mit Marktwissen (#49) sind für die Prognose erlaubt, werden aber getrennt ausgewiesen | Sie nutzen nur frühere Preise, verändern aber die Aussage „Modell gegen Markt" |
+| 27.11.2026 | **Kein Dauerbetrieb.** Paper-Loop, Odds-API-Abfrage und Nightly sind als geplante Aufgaben deaktiviert. Gearbeitet wird mit einzelnen Benchmarks auf Abruf. Prediction-Ledger (#38), Tageslauf (#57) und die Dashboards „Heute“ und „Track Record“ (#58, #59) sind bis dahin zurückgestellt | Daniel: Das Projekt ist kein Produktivsystem zum Wetten, solange kein Modell den Markt schlägt. Preis dafür: Quoten-Snapshots und Orderbücher aus dieser Zeit fehlen später und lassen sich nicht nachholen. Wieder einschalten erst, wenn der Backtest ein GO liefert |
 
 Neue Entscheidungen bitte hier anhängen, mit Datum und Grund.
 
